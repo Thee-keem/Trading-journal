@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  email           String           @unique
+  password_hash   String
+  created_at      DateTime         @default(now())
+  trading_accounts TradingAccount[]
+  trading_plans   TradingPlan[]
+  playbooks       Playbook[]
+  alert_preference UserAlertPreference?
+}
+
+model TradingAccount {
+  id               String   @id @default(uuid())
+  user_id          String
+  broker_name      String
+  account_name     String
+  account_type     String   // Demo, Live, Funded
+  starting_balance Float
+  currency         String   @default("USD")
+  leverage         Int
+  archived         Boolean  @default(false)
+  created_at       DateTime @default(now())
+
+  user             User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  trades           Trade[]
+  trading_plans    TradingPlan[]
+}
+
+model Trade {
+  id           String   @id @default(uuid())
+  user_id      String
+  account_id   String
+  pair         String
+  session      String   // Sydney, Tokyo, London, New York
+  direction    String   // Long, Short
+  entry        Float
+  stop_loss    Float?
+  take_profit  Float?
+  lot_size     Float
+  risk_percent Float?
+  rr           Float?   // Reward:Risk ratio
+  result       String?  // Win, Loss, Break Even
+  pnl          Float?
+  commission   Float?   @default(0)
+  swap         Float?   @default(0)
+  notes        String?
+  created_at   DateTime @default(now())
+
+  account      TradingAccount @relation(fields: [account_id], references: [id], onDelete: Cascade)
+}
+
+model TradingPlan {
+  id                  String   @id @default(uuid())
+  user_id             String
+  account_id          String?
+  title               String
+  risk_rules          Json
+  daily_rules         Json
+  session_rules       Json
+  psychology_rules    Json
+  max_daily_loss      Float?
+  max_weekly_loss     Float?
+  max_trades_per_day  Int?
+  allowed_sessions    Json?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  user                User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account             TradingAccount? @relation(fields: [account_id], references: [id], onDelete: Cascade)
+}
+
+model Playbook {
+  id            String   @id @default(uuid())
+  user_id       String
+  name          String
+  conditions    Json
+  confirmations Json
+  invalidations Json
+  risk_model    Json?
+  created_at    DateTime @default(now())
+
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model EconomicEvent {
+  id             String   @id @default(uuid())
+  event_name     String
+  currency       String
+  impact         String   // Low, Medium, High
+  event_time_utc DateTime
+  forecast       String?
+  previous       String?
+  actual         String?
+  country        String?
+  created_at     DateTime @default(now())
+}
+
+model UserAlertPreference {
+  id                   String   @id @default(uuid())
+  user_id              String   @unique
+  monitored_currencies String[] // e.g., ["USD", "EUR", "GBP", "JPY", "XAU"]
+  minimum_impact       String   @default("Medium") // Low, Medium, High
+  alert_offsets        Int[]    // Minutes: e.g., [60, 30, 15, 5]
+  email_enabled        Boolean  @default(false)
+  push_enabled         Boolean  @default(false)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
