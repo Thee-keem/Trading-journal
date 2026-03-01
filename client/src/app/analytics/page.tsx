@@ -5,7 +5,8 @@ import { motion } from "framer-motion"
 import dynamic from "next/dynamic"
 import { Download, Cpu, Trophy, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, BarChart3, Layers, FlaskConical, Brain, ShieldAlert } from "lucide-react"
 import { MetricCard, Section, GlassPanel } from "@/components/analytics/metric-card"
-import { generateTrades, calcMetrics } from "@/lib/analytics-data"
+import { calcMetrics } from "@/lib/analytics-data"
+import { fetchTrades, fetchAnalyticsSummary, fetchAiCoachInsights, fetchMonteCarloResults, fetchEquityCurve, fetchAccounts, Trade, AnalyticsSummary, AiCoachInsight, MonteCarloData, EquitySnapshot, TradingAccount } from "@/lib/api"
 
 const EquityCurveChart = dynamic(() => import("@/components/analytics/charts").then(m => m.EquityCurveChart), { ssr: false, loading: () => <ChartSkeleton h={280} /> })
 const DrawdownChart = dynamic(() => import("@/components/analytics/charts").then(m => m.DrawdownChart), { ssr: false, loading: () => <ChartSkeleton h={220} /> })
@@ -190,17 +191,22 @@ function SetupMatrix({ data }: { data: ReturnType<typeof calcMetrics>["setupEdge
 }
 
 // Floating AI Insight Panel
-function AiInsightPanel({ metrics }: { metrics: ReturnType<typeof calcMetrics> }) {
-    const best = metrics.sessionEdge.reduce((b, s) => s.expectancy > b.expectancy ? s : b, metrics.sessionEdge[0])
-    const worst = metrics.sessionEdge.reduce((b, s) => s.expectancy < b.expectancy ? s : b, metrics.sessionEdge[0])
-    const insights = [
-        { icon: "🏆", color: "emerald", text: `Your strongest edge is in the ${best.session} session with ${best.winRate}% win rate.` },
-        { icon: "⚠️", color: "red", text: `Your plan compliance drops your PnL by ${metrics.complianceDrop}% per trade when violated.` },
-        { icon: "📊", color: "blue", text: `Sharpe Ratio of ${metrics.sharpe.toFixed(2)} indicates ${metrics.sharpe > 1 ? "strong risk-adjusted returns" : "room for risk optimization"}.` },
-        { icon: "🎯", color: "purple", text: `You need ${metrics.breakEvenWR}% win rate to break even at your current avg RR of ${metrics.payoffRatio.toFixed(1)}.` },
-        { icon: "💡", color: "amber", text: `Avoid the ${worst.session} session — negative expectancy of ${worst.expectancy}R.` },
-        { icon: "📈", color: "emerald", text: `With ${metrics.total} trades, your edge ${metrics.expectancy > 0 ? "is statistically significant" : "needs more data"}.` },
-    ]
+function AiInsightPanel({ insights, loading }: { insights: AiCoachInsight[]; loading: boolean }) {
+    const categoryIcons: Record<string, string> = {
+        Psychology: "🧠",
+        Strategy: "🏆",
+        Risk: "⚠️",
+        Discipline: "📊",
+        Performance: "📈"
+    }
+
+    const categoryColors: Record<string, string> = {
+        Psychology: "purple",
+        Strategy: "emerald",
+        Risk: "amber",
+        Discipline: "blue",
+        Performance: "blue"
+    }
 
     return (
         <motion.div
@@ -219,18 +225,26 @@ function AiInsightPanel({ metrics }: { metrics: ReturnType<typeof calcMetrics> }
                 </div>
             </div>
             <div className="space-y-3">
-                {insights.map((ins, i) => (
-                    <motion.div
-                        key={i}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.6 + i * 0.1 }}
-                        className="flex gap-3 p-3 rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-colors"
-                    >
-                        <span className="text-lg shrink-0">{ins.icon}</span>
-                        <p className="text-xs text-slate-300 leading-relaxed">{ins.text}</p>
-                    </motion.div>
-                ))}
+                {loading ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="h-16 bg-white/5 animate-pulse rounded-xl" />
+                    ))
+                ) : insights.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic px-2">No insights generated yet.</p>
+                ) : (
+                    insights.map((ins, i) => (
+                        <motion.div
+                            key={i}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 + i * 0.1 }}
+                            className="flex gap-3 p-3 rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-colors"
+                        >
+                            <span className="text-lg shrink-0">{categoryIcons[ins.category] || "💡"}</span>
+                            <p className="text-xs text-slate-300 leading-relaxed">{ins.content}</p>
+                        </motion.div>
+                    ))
+                )}
             </div>
         </motion.div>
     )
@@ -267,23 +281,54 @@ function StabilityPanel({ metrics }: { metrics: ReturnType<typeof calcMetrics> }
 
 export default function AnalyticsPage() {
     const [mounted, setMounted] = useState(false)
-    useEffect(() => { setMounted(true) }, [])
+    const [loading, setLoading] = useState(true)
+    const [trades, setTrades] = useState<Trade[]>([])
+    const [accounts, setAccounts] = useState<TradingAccount[]>([])
+    const [selectedAccount, setSelectedAccount] = useState("portfolio")
+    const [aiInsights, setAiInsights] = useState<AiCoachInsight[]>([])
+    const [monteCarlo, setMonteCarlo] = useState<MonteCarloData[]>([])
+    const [equityHistory, setEquityHistory] = useState<EquitySnapshot[]>([])
 
-    const trades = useMemo(() => generateTrades(200), [])
-    const metrics = useMemo(() => calcMetrics(trades), [trades])
+    useEffect(() => {
+        setMounted(true)
+        const loadAll = async () => {
+            try {
+                setLoading(true)
+                const accId = selectedAccount === "portfolio" ? undefined : selectedAccount
+                const [acctsRes, tradesRes, aiRes, mcRes, eqRes] = await Promise.all([
+                    fetchAccounts(),
+                    fetchTrades({ account_id: accId, limit: 100 }),
+                    fetchAiCoachInsights(accId),
+                    fetchMonteCarloResults(accId),
+                    fetchEquityCurve(accId)
+                ])
+                setAccounts(acctsRes.accounts)
+                setTrades(tradesRes.trades)
+                setAiInsights(aiRes.insights)
+                setMonteCarlo(mcRes.simulation_results)
+                setEquityHistory(eqRes.history)
+            } finally {
+                setLoading(false)
+            }
+        }
+        loadAll()
+    }, [selectedAccount])
+
+    const metrics = useMemo(() => calcMetrics(trades as any), [trades])
 
     // Monthly PnL summary
     const monthlyPnl = useMemo(() => {
         const months: Record<string, number> = {}
         trades.forEach(t => {
-            const m = t.date.slice(0, 7)
-            months[m] = (months[m] || 0) + t.pnl
+            if (!t.created_at) return
+            const m = t.created_at.slice(0, 7)
+            months[m] = (months[m] || 0) + (t.pnl || 0)
         })
         return Object.entries(months).slice(-8).map(([m, pnl]) => ({ name: m.slice(5), pnl }))
     }, [trades])
 
     // R-multiple sparkline
-    const rSparkline = metrics.rMultiples.slice(-30)
+    const rSparkline = trades.map(t => t.rr || 0).slice(-30)
 
     if (!mounted) return (
         <div className="min-h-screen p-8 flex flex-col gap-6">
@@ -306,11 +351,25 @@ export default function AnalyticsPage() {
                             Performance Lab
                         </h1>
                     </div>
-                    <p className="text-muted-foreground ml-12">Quantitative edge detection · {metrics.total} trades analysed</p>
+                    <p className="text-muted-foreground ml-12">Quantitative edge detection · {trades.length} trades analysed</p>
                 </div>
-                <button onClick={() => alert("PDF Export feature coming soon")} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 rounded-full text-sm font-medium transition-colors">
-                    <Download className="w-4 h-4" /> Export PDF
-                </button>
+
+                <div className="flex items-center gap-3">
+                    <select
+                        value={selectedAccount}
+                        onChange={(e) => setSelectedAccount(e.target.value)}
+                        className="bg-black/40 border border-white/10 rounded-full px-4 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50"
+                    >
+                        <option value="portfolio">All Portfolios</option>
+                        {accounts.map(acc => (
+                            <option key={acc.id} value={acc.id}>{acc.account_name}</option>
+                        ))}
+                    </select>
+
+                    <button onClick={() => alert("PDF Export feature coming soon")} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 rounded-full text-sm font-medium transition-colors">
+                        <Download className="w-4 h-4" /> Export PDF
+                    </button>
+                </div>
             </header>
 
             <div className="flex flex-col xl:flex-row gap-8">
@@ -342,7 +401,7 @@ export default function AnalyticsPage() {
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                             <GlassPanel>
                                 <h3 className="font-semibold text-slate-200 mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-blue-400" /> Equity Curve</h3>
-                                <EquityCurveChart data={metrics.equityCurve} />
+                                <EquityCurveChart data={equityHistory} />
                             </GlassPanel>
                             <GlassPanel>
                                 <h3 className="font-semibold text-slate-200 mb-4 flex items-center gap-2"><TrendingDown className="w-4 h-4 text-red-400" /> Rolling Drawdown</h3>
@@ -370,8 +429,8 @@ export default function AnalyticsPage() {
                             </GlassPanel>
                             <GlassPanel>
                                 <h3 className="font-semibold text-slate-200 mb-1 flex items-center gap-2"><Cpu className="w-4 h-4 text-purple-400" /> Monte Carlo Simulation</h3>
-                                <p className="text-[11px] text-slate-500 mb-4">200 reshuffles · 100 trade projection · 95% confidence band</p>
-                                <MonteCarloCurve data={metrics.mcBands} />
+                                <p className="text-[11px] text-slate-500 mb-4">1,000 reshuffles · 100 trade projection · 95% confidence band</p>
+                                <MonteCarloCurve data={monteCarlo} />
                                 <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-white/5 text-xs text-slate-400">
                                     <span className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-blue-500 rounded" /> Median path</span>
                                     <span className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-indigo-500 rounded opacity-60" /> 95th percentile</span>
@@ -403,15 +462,15 @@ export default function AnalyticsPage() {
                             <h3 className="font-semibold text-slate-200 mb-4 flex items-center gap-2">
                                 <Layers className="w-4 h-4 text-purple-400" /> 24h Time-of-Day PnL Heatmap
                             </h3>
-                            <TimeHeatmap trades={trades} />
+                            <TimeHeatmap trades={trades.map(t => ({ pnl: t.pnl || 0, date: t.created_at || "", holdingMins: t.lot_size ? 60 : 0 }))} />
                         </GlassPanel>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <GlassPanel>
                                 <h3 className="font-semibold text-slate-200 mb-4">Revenge Trading Risk</h3>
                                 <div className="space-y-3">
                                     {[
-                                        { label: "Trades placed after a loss", count: trades.filter(t => t.afterLoss).length, total: trades.length, color: "bg-amber-500" },
-                                        { label: "Violating plan after a loss", count: trades.filter(t => t.afterLoss && t.planViolation).length, total: trades.filter(t => t.afterLoss).length, color: "bg-red-500" },
+                                        { label: "Trades placed after a loss", count: trades.filter(t => t.after_loss || t.after_loss).length, total: trades.length, color: "bg-amber-500" },
+                                        { label: "Violating plan after a loss", count: trades.filter(t => (t.after_loss || t.after_loss) && (t.plan_violation || t.plan_violation)).length, total: trades.filter(t => t.after_loss || t.after_loss).length, color: "bg-red-500" },
                                     ].map((item, i) => (
                                         <div key={i}>
                                             <div className="flex justify-between text-xs text-slate-400 mb-1.5">
@@ -458,7 +517,7 @@ export default function AnalyticsPage() {
                                 {[
                                     { icon: ShieldAlert, label: "Compliance Score", value: `${metrics.complianceScore}%`, color: metrics.complianceScore >= 80 ? "text-emerald-400" : "text-red-400", bg: metrics.complianceScore >= 80 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20" },
                                     { icon: TrendingDown, label: "PnL Drop When Violating", value: `-${metrics.complianceDrop}%`, color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
-                                    { icon: AlertTriangle, label: "Plan Violations", value: `${trades.filter(t => t.planViolation).length} trades`, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+                                    { icon: AlertTriangle, label: "Plan Violations", value: `${trades.filter(t => t.plan_violation || t.plan_violation).length} trades`, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
                                 ].map(({ icon: Icon, label, value, color, bg }, i) => (
                                     <div key={i} className={`flex items-center gap-4 p-4 rounded-xl border ${bg}`}>
                                         <Icon className={`w-8 h-8 ${color} shrink-0`} />
@@ -488,7 +547,7 @@ export default function AnalyticsPage() {
                 {/* AI Panel — sticky sidebar on large screens */}
                 <div className="xl:w-80 shrink-0">
                     <div className="sticky top-8">
-                        <AiInsightPanel metrics={metrics} />
+                        <AiInsightPanel insights={aiInsights} loading={loading} />
                     </div>
                 </div>
             </div>

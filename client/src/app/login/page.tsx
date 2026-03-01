@@ -23,14 +23,29 @@ export default function LoginPage() {
         setError("")
         setLoading(true)
 
-        await new Promise(r => setTimeout(r, 900))
+        try {
+            const res = await fetch("http://localhost:3001/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password })
+            })
 
-        if (email === DEMO.email && password === DEMO.password) {
+            const data = await res.json()
+
+            if (!res.ok) {
+                throw new Error(data.error || "Login failed")
+            }
+
+            // Success
+            localStorage.setItem("nova_token", data.token)
+            localStorage.setItem("nova_user", JSON.stringify(data.user))
+
             setSuccess(true)
-            await new Promise(r => setTimeout(r, 600))
+            await new Promise(r => setTimeout(r, 800))
             router.push("/")
-        } else {
-            setError("Invalid credentials. Use demo@novatrade.io / demo1234")
+        } catch (err: any) {
+            setError(err.message || "Connection refused. Is the server running?")
+        } finally {
             setLoading(false)
         }
     }

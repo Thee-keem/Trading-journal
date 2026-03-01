@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -15,6 +15,7 @@ model User {
   trading_accounts TradingAccount[]
   trading_plans   TradingPlan[]
   playbooks       Playbook[]
+  ai_insights     AiInsight[]
   alert_preference UserAlertPreference?
 }
 
@@ -33,6 +34,7 @@ model TradingAccount {
   user             User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
   trades           Trade[]
   trading_plans    TradingPlan[]
+  ai_insights      AiInsight[]
 }
 
 model Trade {
@@ -43,16 +45,27 @@ model Trade {
   session      String   // Sydney, Tokyo, London, New York
   direction    String   // Long, Short
   entry        Float
+  exit         Float?
   stop_loss    Float?
   take_profit  Float?
   lot_size     Float
-  risk_percent Float?
-  rr           Float?   // Reward:Risk ratio
-  result       String?  // Win, Loss, Break Even
-  pnl          Float?
+  contract_size Float?  @default(100000)
+  exchange_rate Float?  @default(1.0)
+  fees         Float?   @default(0)
   commission   Float?   @default(0)
   swap         Float?   @default(0)
+  risk_percent Float?
+  rr           Float?   // Reward:Risk ratio
+  pnl          Float?
+  result_percent Float?
+  is_win       Boolean?
+  result       String?  // Win, Loss, Break Even
+  confirmations Json?
+  emotion      String?
+  screenshot_url String?
   notes        String?
+  plan_violation Boolean @default(false)
+  after_loss     Boolean @default(false)
   created_at   DateTime @default(now())
 
   account      TradingAccount @relation(fields: [account_id], references: [id], onDelete: Cascade)
@@ -107,13 +120,25 @@ model EconomicEvent {
 model UserAlertPreference {
   id                   String   @id @default(uuid())
   user_id              String   @unique
-  monitored_currencies String[] // e.g., ["USD", "EUR", "GBP", "JPY", "XAU"]
+  monitored_currencies Json? // e.g., ["USD", "EUR", "GBP", "JPY", "XAU"]
   minimum_impact       String   @default("Medium") // Low, Medium, High
-  alert_offsets        Int[]    // Minutes: e.g., [60, 30, 15, 5]
+  alert_offsets        Json?    // Minutes: e.g., [60, 30, 15, 5]
   email_enabled        Boolean  @default(false)
   push_enabled         Boolean  @default(false)
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model AiInsight {
+  id           String   @id @default(uuid())
+  user_id      String
+  account_id   String?
+  category     String   // Strategy, Psychology, Risk, Performance
+  content      String
+  created_at   DateTime @default(now())
+
+  user         User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account      TradingAccount? @relation(fields: [account_id], references: [id], onDelete: Cascade)
 }

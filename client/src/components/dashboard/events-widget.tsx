@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Calendar as CalendarIcon, ChevronDown, ChevronUp, AlertTriangle, ExternalLink } from "lucide-react"
+import { Calendar as CalendarIcon, ChevronDown, ChevronUp, AlertTriangle, ExternalLink, RefreshCw, CheckCircle2 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { fetchEconomicCalendar, type EconomicEvent } from "@/lib/api"
 import { formatDistanceToNowStrict } from "date-fns"
@@ -35,20 +35,40 @@ function Countdown({ targetIso }: { targetIso: string }) {
 export function EventsWidget() {
     const [expanded, setExpanded] = useState(false)
     const [events, setEvents] = useState<EconomicEvent[]>(FALLBACK)
+    const [syncing, setSyncing] = useState(false)
+    const [source, setSource] = useState<string>("loading")
+    const [error, setError] = useState<string | null>(null)
+
+    const loadData = async () => {
+        try {
+            setSyncing(true)
+            setError(null)
+            const data = await fetchEconomicCalendar()
+            setSource(data.source)
+
+            const now = Date.now()
+            const upcoming = data.events
+                .filter(e => new Date(e.event_time_utc).getTime() > now - 3600000)
+                .sort((a, b) => new Date(a.event_time_utc).getTime() - new Date(b.event_time_utc).getTime())
+
+            if (upcoming.length) setEvents(upcoming)
+        } catch (err: any) {
+            console.error("Calendar load failed:", err)
+            setSource("error")
+            setError("Live Feed Unavailable")
+        } finally {
+            setSyncing(false)
+        }
+    }
 
     useEffect(() => {
-        fetchEconomicCalendar()
-            .then(data => {
-                // Show only upcoming (next 24h) events
-                const now = Date.now()
-                const upcoming = data.events
-                    .filter(e => new Date(e.event_time_utc).getTime() > now - 60000) // include very recently released
-                    .sort((a, b) => new Date(a.event_time_utc).getTime() - new Date(b.event_time_utc).getTime())
-                    .slice(0, 6)
-                if (upcoming.length) setEvents(upcoming)
-            })
-            .catch(() => { }) // silently use fallback
+        loadData()
     }, [])
+
+    const handleSync = async (e: React.MouseEvent) => {
+        e.stopPropagation()
+        loadData()
+    }
 
     const nextHighImpact = events.find(e => e.impact === "High" && !e.actual && new Date(e.event_time_utc).getTime() > Date.now())
     const highCount = events.filter(e => e.impact === "High" && !e.actual).length
@@ -66,11 +86,32 @@ export function EventsWidget() {
                     </div>
                     <div>
                         <h3 className="font-semibold text-white text-sm">Upcoming Economic Events</h3>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{events.length} events loaded for today</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            {error ? (
+                                <span className="flex items-center gap-1 text-[10px] text-red-400 font-bold uppercase transition-all">
+                                    <AlertTriangle className="w-3 h-3" /> {error}
+                                </span>
+                            ) : (
+                                <>
+                                    <p className="text-[11px] text-slate-500">{events.length} events loaded</p>
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase tracking-tighter ${source === "live" ? "bg-emerald-500/10 text-emerald-400" : "bg-white/5 text-slate-400"}`}>
+                                        Source: {source}
+                                    </span>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleSync}
+                        disabled={syncing}
+                        className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
+                        title="Sync Live Data"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 text-slate-400 group-hover:text-blue-400 ${syncing ? "animate-spin" : ""}`} />
+                    </button>
                     {nextHighImpact && (
                         <div className="hidden sm:flex items-center gap-2 bg-red-500/10 px-3 py-1.5 rounded-full border border-red-500/20">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.7)]" />

@@ -5,13 +5,15 @@ import { motion, AnimatePresence } from "framer-motion"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Activity, ArrowUpRight, ArrowDownRight, TrendingUp, Trophy, Target, Clock, ShieldCheck, Briefcase, BarChart3, Percent, TrendingDown, CircleDollarSign } from "lucide-react"
+import { Activity, ArrowUpRight, ArrowDownRight, TrendingUp, Trophy, Target, Clock, ShieldCheck, Briefcase, BarChart3, Percent, TrendingDown, CircleDollarSign, History as HistoryIcon, LogOut, User as UserIcon, Zap, AlertTriangle, Lightbulb } from "lucide-react"
+import { fetchTrades, fetchAccounts, fetchAnalyticsSummary, fetchEquityCurve, fetchInsights, Trade, TradingAccount, AnalyticsSummary, EquitySnapshot, BehavioralInsight } from "@/lib/api"
 
 const WorldMapSession = dynamic(() => import("@/components/dashboard/world-map").then(m => m.WorldMapSession), {
   ssr: false,
   loading: () => <div className="h-[340px] w-full flex items-center justify-center bg-black/20 rounded-2xl animate-pulse text-muted-foreground text-sm">Loading Map...</div>
 })
 const EventsWidget = dynamic(() => import("@/components/dashboard/events-widget").then(m => m.EventsWidget), { ssr: false })
+const TradingChecklist = dynamic(() => import("@/components/dashboard/trading-checklist").then(m => m.TradingChecklist), { ssr: false })
 const AreaChart = dynamic(() => import("recharts").then(r => r.AreaChart), { ssr: false })
 const Area = dynamic(() => import("recharts").then(r => r.Area), { ssr: false })
 const XAxis = dynamic(() => import("recharts").then(r => r.XAxis), { ssr: false })
@@ -52,21 +54,23 @@ const tooltipStyle = {
 }
 
 // Portfolio view — rich multi-account overview
-function PortfolioView() {
-  const totalEquity = 36600 + 106100 + 10700
-  const totalPnl = 6600 + 6100 + 700
+function PortfolioView({ onSelectAccount, summary, accounts }: { onSelectAccount: (id: string) => void, summary: AnalyticsSummary | null, accounts: TradingAccount[] }) {
+  const totalEquity = accounts.reduce((sum, acc) => sum + acc.starting_balance, 0) + (summary?.net_pnl || 0)
+  const totalPnl = summary?.net_pnl || 0
+  const winRate = summary?.win_rate || 0
+
   return (
     <div className="space-y-6">
       {/* Top summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Total Portfolio Value", value: `$${totalEquity.toLocaleString()}`, sub: `+$${totalPnl.toLocaleString()} all-time`, icon: CircleDollarSign, color: "text-blue-400", border: "border-blue-500/20 bg-blue-500/5" },
-          { label: "Combined Net PnL", value: `+$${totalPnl.toLocaleString()}`, sub: "+10.2% portfolio return", icon: TrendingUp, color: "text-emerald-400", border: "border-emerald-500/20 bg-emerald-500/5" },
-          { label: "Avg Win Rate", value: "65%", sub: "Across 160 total trades", icon: Percent, color: "text-amber-400", border: "border-amber-500/20 bg-amber-500/5" },
-          { label: "Overall Discipline", value: "87/100", sub: "4 plan violations this month", icon: ShieldCheck, color: "text-purple-400", border: "border-purple-500/20 bg-purple-500/5" },
+          { label: "Total Portfolio Value", value: `$${totalEquity.toLocaleString()}`, sub: `Across ${accounts.length} accounts`, icon: CircleDollarSign, color: "text-blue-400", border: "border-blue-500/20 bg-blue-500/5" },
+          { label: "Combined Net PnL", value: `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toLocaleString()}`, sub: "All-time performance", icon: TrendingUp, color: totalPnl >= 0 ? "text-emerald-400" : "text-red-400", border: "border-emerald-500/20 bg-emerald-500/5" },
+          { label: "Profit Factor", value: summary?.profit_factor.toFixed(2) || "0.00", sub: `Target: > 1.50`, icon: Zap, color: "text-amber-400", border: "border-amber-500/20 bg-amber-500/5" },
+          { label: "Avg Win Rate", value: `${winRate.toFixed(1)}%`, sub: `Across ${summary?.total_trades || 0} total trades`, icon: Percent, color: "text-purple-400", border: "border-purple-500/20 bg-purple-500/5" },
         ].map((s, i) => (
           <motion.div key={i} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-            className={`rounded-2xl border p-5 ${s.border} backdrop-blur-xl`}>
+            className={`rounded-2xl border p-5 ${s.border} backdrop-blur-xl group cursor-default`}>
             <div className="flex items-center gap-2 mb-3">
               <s.icon className={`w-4 h-4 ${s.color}`} />
               <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">{s.label}</span>
@@ -77,49 +81,41 @@ function PortfolioView() {
         ))}
       </div>
 
-      {/* Per-account breakdown */}
+      {/* Per-account breakdown (Real Accounts) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {Object.entries(ACCOUNT_STATS).map(([id, acc], i) => {
-          const acct = ACCOUNTS.find(a => a.id === id)!
+        {accounts.map((acc, i) => {
           return (
-            <motion.div key={id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.1 }}>
-              <Card className="bg-black/40 border-white/10 backdrop-blur-xl p-5">
+            <motion.div
+              key={acc.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 + i * 0.1 }}
+              onClick={() => onSelectAccount(acc.id)}
+              className="group cursor-pointer"
+            >
+              <Card className="bg-black/40 border-white/10 backdrop-blur-xl p-5 hover:border-blue-500/40 transition-all hover:bg-white/[0.04]">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <acct.icon className="w-4 h-4 text-slate-400" />
-                    <span className="text-sm font-semibold text-white">{acct.label.split("—")[0].trim()}</span>
+                    <Briefcase className="w-4 h-4 text-slate-400 group-hover:text-blue-400" />
+                    <span className="text-sm font-semibold text-white group-hover:text-blue-300">{acc.account_name}</span>
                   </div>
-                  <span className={`text-xs font-bold px-2 py-1 rounded-full ${acc.pnl.startsWith("+") ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>{acc.pnlPct}</span>
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded bg-white/5 border border-white/10 text-slate-400`}>{acc.account_type}</span>
                 </div>
                 <div className="space-y-3">
                   {[
-                    { label: "Equity", value: acc.equity },
-                    { label: "PnL", value: acc.pnl, color: acc.pnl.startsWith("+") ? "text-emerald-400" : "text-red-400" },
-                    { label: "Win Rate", value: acc.winRate },
-                    { label: "Trades", value: String(acc.trades) },
-                    { label: "Max DD", value: acc.maxDD, color: "text-red-400" },
-                    { label: "Profit Factor", value: acc.profitFactor },
-                    { label: "Discipline", value: acc.discipline },
+                    { label: "Starting", value: `$${acc.starting_balance.toLocaleString()}` },
+                    { label: "Currency", value: acc.currency },
+                    { label: "Broker", value: acc.broker_name },
                   ].map(row => (
                     <div key={row.label} className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">{row.label}</span>
-                      <span className={`text-xs font-mono font-semibold ${row.color ?? "text-slate-200"}`}>{row.value}</span>
+                      <span className={`text-xs font-mono font-semibold text-slate-200`}>{row.value}</span>
                     </div>
                   ))}
                 </div>
-                {/* Mini equity sparkline */}
-                <div className="mt-4 h-16">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={acc.equityData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id={`grad-${id}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <Area type="monotone" dataKey="e" stroke="#3b82f6" strokeWidth={1.5} fill={`url(#grad-${id})`} dot={false} />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-center gap-1.5 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">View Account Dashboard</span>
+                  <ArrowUpRight className="w-3 h-3 text-blue-400" />
                 </div>
               </Card>
             </motion.div>
@@ -131,14 +127,15 @@ function PortfolioView() {
 }
 
 // Single account view
-function SingleAccountView({ id }: { id: string }) {
-  const acc = ACCOUNT_STATS[id]
-  const acct = ACCOUNTS.find(a => a.id === id)!
+function SingleAccountView({ id, accounts }: { id: string, accounts: TradingAccount[] }) {
+  const account = accounts.find(a => a.id === id)
+  if (!account) return <div className="text-slate-500">Account not found</div>
+
   const stats = [
-    { title: "Net Equity", value: acc.equity, sub: `${acc.pnlPct} all-time`, icon: Activity, color: "text-blue-500" },
-    { title: "Net PnL", value: acc.pnl, sub: "This account total", icon: TrendingUp, color: "text-emerald-500" },
-    { title: "Win Rate", value: acc.winRate, sub: `${acc.trades} total trades`, icon: Trophy, color: "text-amber-500" },
-    { title: "Discipline Score", value: acc.discipline, sub: "4 violations this month", icon: ShieldCheck, color: "text-purple-500" },
+    { title: "Net Equity", value: `$${account.starting_balance.toLocaleString()}`, sub: "Starting Balance", icon: Activity, color: "text-blue-500" },
+    { title: "Current Balance", value: `$${(account.starting_balance).toLocaleString()}`, sub: "Real-time tracking", icon: TrendingUp, color: "text-emerald-500" },
+    { title: "Win Rate", value: "0%", sub: "0 total trades", icon: Trophy, color: "text-amber-500" },
+    { title: "Profit Factor", value: "0.00", sub: "Equity Efficiency", icon: Zap, color: "text-purple-500" },
   ]
   return (
     <div className="space-y-6">
@@ -158,16 +155,15 @@ function SingleAccountView({ id }: { id: string }) {
           </motion.div>
         ))}
       </div>
-      {/* Additional single-account stats row */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {[
-          { label: "Max Drawdown", value: acc.maxDD, color: "text-red-400" },
-          { label: "Profit Factor", value: acc.profitFactor, color: "text-blue-400" },
-          { label: "Total Trades", value: String(acc.trades), color: "text-slate-200" },
+          { label: "Account Type", value: account.account_type, color: "text-blue-400" },
+          { label: "Currency", value: account.currency, color: "text-slate-200" },
+          { label: "Broker", value: account.broker_name, color: "text-slate-200" },
         ].map((s, i) => (
           <div key={i} className="rounded-xl bg-black/40 border border-white/8 p-4">
             <div className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-2">{s.label}</div>
-            <div className={`text-2xl font-bold tabular-nums ${s.color}`}>{s.value}</div>
+            <div className={`text-lg font-bold tabular-nums ${s.color}`}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -178,13 +174,66 @@ function SingleAccountView({ id }: { id: string }) {
 // ── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const router = useRouter()
-  const [selectedAccount, setSelectedAccount] = useState("portfolio")
+  const [trades, setTrades] = useState<Trade[]>([])
+  const [accounts, setAccounts] = useState<TradingAccount[]>([])
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null)
+  const [equityHistory, setEquityHistory] = useState<EquitySnapshot[]>([])
+  const [insights, setInsights] = useState<BehavioralInsight[]>([])
+  const [user, setUser] = useState<any>(null)
+  const [selectedAccount, setSelectedAccount] = useState<string>("portfolio")
   const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setMounted(true)
+    const token = localStorage.getItem("nova_token")
+    const userData = localStorage.getItem("nova_user")
+
+    if (!token) {
+      router.push("/login")
+      return
+    }
+
+    if (userData) {
+      setUser(JSON.parse(userData))
+    }
+
+    const loadData = async (accId?: string) => {
+      try {
+        setLoading(true)
+        const effectiveAccId = accId === "portfolio" ? undefined : accId
+        const [acctsRes, tradesRes, summaryRes, equityRes, insightsRes] = await Promise.all([
+          fetchAccounts(),
+          fetchTrades({ limit: 5, account_id: effectiveAccId }),
+          fetchAnalyticsSummary(effectiveAccId),
+          fetchEquityCurve(effectiveAccId),
+          fetchInsights(effectiveAccId)
+        ])
+        setAccounts(acctsRes.accounts)
+        setTrades(tradesRes.trades)
+        setSummary(summaryRes)
+        setEquityHistory(equityRes.history)
+        setInsights(insightsRes.insights)
+      } catch (err) {
+        console.error("Dashboard data fetch failed:", err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadData(selectedAccount)
+  }, [router, selectedAccount])
+
+  const handleLogout = () => {
+    localStorage.removeItem("nova_token")
+    localStorage.removeItem("nova_user")
+    router.push("/login")
+  }
+
   if (!mounted) return null
 
   const isPortfolio = selectedAccount === "portfolio"
-  const chartData = isPortfolio ? equityData : (ACCOUNT_STATS[selectedAccount]?.equityData ?? equityData)
+  const chartData = equityHistory.length > 0 ? equityHistory : []
 
   return (
     <div className="min-h-screen bg-transparent text-foreground p-4 sm:p-6 lg:p-8 font-sans">
@@ -205,18 +254,31 @@ export default function Dashboard() {
             <Activity className="w-4 h-4" />
           </button>
 
-          {/* Account selector */}
-          <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-full px-4 py-2 backdrop-blur-xl">
-            <select
-              value={selectedAccount}
-              onChange={e => setSelectedAccount(e.target.value)}
-              className="bg-transparent border-none text-white focus:ring-0 outline-none text-sm font-semibold cursor-pointer appearance-none"
+          {!isPortfolio && (
+            <button
+              onClick={() => setSelectedAccount("portfolio")}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm font-semibold text-white transition-all backdrop-blur-xl shadow-lg"
             >
-              {ACCOUNTS.map(a => (
-                <option key={a.id} value={a.id} className="bg-slate-900">{a.label}</option>
-              ))}
-            </select>
-          </div>
+              <Briefcase className="w-4 h-4 text-slate-400" />
+              Back to Portfolio
+            </button>
+          )}
+
+          {user && (
+            <div className="flex items-center gap-2 ml-2">
+              <div className="hidden md:flex flex-col items-end mr-2">
+                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-none mb-1">Active Trader</span>
+                <span className="text-xs text-white font-semibold leading-none">{user.email}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 hover:bg-red-500 hover:text-white transition-all backdrop-blur-xl group shadow-lg"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -230,154 +292,179 @@ export default function Dashboard() {
           transition={{ duration: 0.2 }}
           className="mb-6"
         >
-          {isPortfolio
-            ? <PortfolioView />
-            : <SingleAccountView id={selectedAccount} />
+          {loading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-white/5 rounded-2xl animate-pulse border border-white/10" />)}
+            </div>
+          ) : isPortfolio
+            ? <PortfolioView onSelectAccount={setSelectedAccount} summary={summary} accounts={accounts} />
+            : <SingleAccountView id={selectedAccount} accounts={accounts} />
           }
         </motion.div>
       </AnimatePresence>
 
-      {/* Equity chart + map (shown for single accounts & portfolio) */}
-      {!isPortfolio && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
-          <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 }} className="xl:col-span-2 relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-500" />
-            <Card className="h-full flex flex-col relative bg-black/60 border-white/10 backdrop-blur-3xl min-h-[320px]">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Equity Growth</CardTitle>
-                <span className="text-xs text-slate-500 font-medium font-mono">Live · {ACCOUNTS.find(a => a.id === selectedAccount)?.label}</span>
-              </CardHeader>
-              <CardContent className="flex-1 min-h-[240px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <Tooltip {...tooltipStyle} formatter={(v: any) => [`$${Number(v).toLocaleString()}`, "Equity"]} />
-                    <XAxis dataKey="n" stroke="#475569" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis domain={["auto", "auto"]} stroke="#475569" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v / 1000}k`} />
-                    <Area type="monotone" dataKey="e" stroke="#3b82f6" strokeWidth={2.5} fill="url(#eqGrad)" animationDuration={1500} dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </motion.div>
+      {/* Persistent Grid: Chart/Map/Checklist */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-6">
+        {/* Equity chart (shown for single accounts & portfolio) */}
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 }} className="xl:col-span-2 relative group">
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-500" />
+          <Card className="h-full flex flex-col relative bg-black/60 border-white/10 backdrop-blur-3xl min-h-[360px]">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base font-bold flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-blue-400" />
+                Equity Growth Curve
+              </CardTitle>
+              <span className="text-xs text-slate-500 font-medium font-mono bg-white/5 px-2 py-1 rounded-md">{ACCOUNTS.find(a => a.id === selectedAccount)?.label}</span>
+            </CardHeader>
+            <CardContent className="flex-1 min-h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Tooltip {...tooltipStyle} formatter={(v: any) => [`$${Number(v).toLocaleString()}`, "Equity"]} />
+                  <XAxis
+                    dataKey="date"
+                    stroke="#475569"
+                    tick={{ fill: "#94a3b8", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(str) => new Date(str).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  />
+                  <YAxis domain={["auto", "auto"]} stroke="#475569" tick={{ fill: "#94a3b8", fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v / 1000}k`} />
+                  <Area type="monotone" dataKey="equity" stroke="#3b82f6" strokeWidth={2.5} fill="url(#eqGrad)" animationDuration={1000} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-            <Card className="h-full border-blue-500/20 bg-blue-950/10 min-h-[320px]">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-blue-400 flex items-center gap-2 text-base">
-                    <Clock className="w-4 h-4" /> Live Session Map
-                  </CardTitle>
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500" />
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="h-[240px] p-2 flex items-center justify-center">
-                <WorldMapSession />
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      )}
+        {/* World Map - Always Visible */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <Card className="h-full border-blue-500/20 bg-blue-950/10 min-h-[360px] relative overflow-hidden">
+            <CardHeader className="pb-3 border-b border-white/5 bg-white/5">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-blue-400 flex items-center gap-2 text-sm font-bold uppercase tracking-wider">
+                  <Clock className="w-4 h-4" /> Global Markets
+                </CardTitle>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="h-[280px] p-0 flex items-center justify-center">
+              <WorldMapSession />
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
 
-      {/* Economic events widget */}
-      <EventsWidget />
+      {/* Middle Grid: Tasks + AI + Events */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <TradingChecklist />
 
-      {/* AI Insights + Recent Trades */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
           <Card className="h-full border-purple-500/20 bg-purple-950/10">
             <CardHeader>
               <CardTitle className="text-purple-400 flex items-center gap-2 text-base">
-                <Target className="w-4 h-4" /> AI Intelligence
+                <Target className="w-4 h-4" /> Edge Detection
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {[
-                { color: "text-emerald-400", icon: Trophy, title: "Top Strength", text: "Your edge is strongest in the London-NY overlap session with 81% win rate on XAUUSD." },
-                { color: "text-amber-500", icon: ShieldCheck, title: "Risk Warning", text: "Live account violated max daily loss rule 2× this month. Consider a 24h cool-down after -2%." },
-                { color: "text-blue-400", icon: BarChart3, title: "Edge Insight", text: "Profit Factor drops 40% when you trade within 15 min before high-impact news events." },
-              ].map((ins, i) => (
+              {insights.length === 0 && <p className="text-xs text-slate-500 italic p-4 text-center">No insights available yet. Log more trades to see patterns.</p>}
+              {insights.map((ins, i) => (
                 <div key={i} className="p-3 rounded-xl bg-black/40 border border-white/5 hover:bg-white/5 transition-colors cursor-default">
-                  <p className={`text-xs font-semibold mb-1.5 flex items-center gap-1.5 ${ins.color}`}>
-                    <ins.icon className="w-3.5 h-3.5" /> {ins.title}
+                  <p className={`text-xs font-semibold mb-1.5 flex items-center gap-1.5 ${ins.type === "SUCCESS" ? "text-emerald-400" : ins.type === "WARNING" ? "text-amber-500" : "text-blue-400"
+                    }`}>
+                    {ins.type === "SUCCESS" ? <Trophy className="w-3.5 h-3.5" /> : ins.type === "WARNING" ? <AlertTriangle className="w-3.5 h-3.5" /> : <Lightbulb className="w-3.5 h-3.5" />}
+                    {ins.title || "Insight"}
                   </p>
-                  <p className="text-xs text-slate-300 leading-relaxed">{ins.text}</p>
+                  <p className="text-xs text-slate-400 leading-relaxed font-medium">{ins.message}</p>
                 </div>
               ))}
             </CardContent>
           </Card>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="lg:col-span-2">
-          <Card className="h-full">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <CardTitle className="text-base">Recent Executions</CardTitle>
-              <button
-                onClick={() => router.push("/journal")}
-                className="text-sm text-blue-400 hover:text-blue-300 transition-colors font-medium flex items-center gap-1"
-              >
-                View All <ArrowUpRight className="w-4 h-4" />
-              </button>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left border-collapse">
-                  <thead className="text-xs text-muted-foreground uppercase bg-white/5">
-                    <tr>
-                      <th className="px-4 py-3 rounded-tl-lg font-medium tracking-wider">Pair</th>
-                      <th className="px-4 py-3 font-medium tracking-wider">Dir</th>
-                      <th className="px-4 py-3 font-medium tracking-wider hidden sm:table-cell">R:R</th>
-                      <th className="px-4 py-3 font-medium tracking-wider">PnL</th>
-                      <th className="px-4 py-3 font-medium tracking-wider hidden md:table-cell">Account</th>
-                      <th className="px-4 py-3 rounded-tr-lg font-medium tracking-wider text-right">Result</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {RECENT_TRADES.map((trade, i) => (
-                      <motion.tr
-                        key={trade.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.6 + i * 0.07 }}
-                        className="border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
-                        onClick={() => router.push("/journal")}
-                      >
-                        <td className="px-4 py-3.5 font-semibold text-white text-sm">{trade.pair}</td>
-                        <td className="px-4 py-3.5">
-                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${trade.direction === "Long" ? "bg-blue-500/20 text-blue-400 border border-blue-500/20" : "bg-red-500/20 text-red-400 border border-red-500/20"}`}>
-                            {trade.direction.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-400 font-mono text-xs hidden sm:table-cell">{trade.rr}</td>
-                        <td className={`px-4 py-3.5 font-mono font-semibold text-sm ${trade.status === "Win" ? "text-emerald-400" : "text-red-400"}`}>{trade.pnl}</td>
-                        <td className="px-4 py-3.5 hidden md:table-cell">
-                          <span className="text-xs text-slate-500 bg-white/5 px-2 py-0.5 rounded">{trade.account}</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div className="flex justify-end">
-                            {trade.status === "Win"
-                              ? <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-                              : <ArrowDownRight className="w-4 h-4 text-red-500" />
-                            }
-                          </div>
-                        </td>
-                      </motion.tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
+        <EventsWidget />
       </div>
+
+      {/* Bottom Row: Recent Trades */}
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+        <Card>
+          <CardHeader className="flex flex-row justify-between items-center border-b border-white/5">
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <HistoryIcon className="w-4 h-4 text-slate-400" />
+              Recent Executions
+            </CardTitle>
+            <button
+              onClick={() => router.push("/journal")}
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-bold uppercase tracking-wider flex items-center gap-1 group"
+            >
+              Journal <ArrowUpRight className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left border-collapse">
+                <thead className="text-[10px] text-muted-foreground uppercase bg-white/5">
+                  <tr>
+                    <th className="px-6 py-4 font-bold tracking-widest">Symbol</th>
+                    <th className="px-6 py-4 font-bold tracking-widest">Direction</th>
+                    <th className="px-6 py-4 font-bold tracking-widest hidden sm:table-cell">R:R</th>
+                    <th className="px-6 py-4 font-bold tracking-widest">PnL Result</th>
+                    <th className="px-6 py-4 font-bold tracking-widest hidden md:table-cell">Account</th>
+                    <th className="px-6 py-4 font-bold tracking-widest text-right">Edge</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.length === 0 && !loading && (
+                    <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500">No trades logged yet. Go to Journal to log your first trade!</td></tr>
+                  )}
+                  {trades.map((trade, i) => (
+                    <motion.tr
+                      key={trade.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.6 + i * 0.07 }}
+                      className="border-b border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
+                      onClick={() => router.push("/journal")}
+                    >
+                      <td className="px-6 py-4 font-bold text-white text-sm">{trade.pair}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${trade.direction === "Long" || trade.direction === "LONG" ? "bg-blue-500/20 text-blue-400 border border-blue-500/10" : "bg-red-500/20 text-red-400 border border-red-500/10"}`}>
+                          {trade.direction.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-400 font-mono text-xs hidden sm:table-cell px-6">{trade.rr ?? "1:2"}</td>
+                      <td className={`px-6 py-4 font-mono font-bold text-sm ${trade.result === "Win" ? "text-emerald-400" : "text-red-400"}`}>
+                        {trade.pnl && trade.pnl > 0 ? `+$${trade.pnl.toLocaleString()}` : `$${(trade.pnl ?? 0).toLocaleString()}`}
+                      </td>
+                      <td className="px-6 py-4 hidden md:table-cell">
+                        <span className="text-[10px] font-bold text-slate-500 bg-white/5 border border-white/10 px-2 py-1 rounded shadow-sm">
+                          {accounts.find(a => a.id === trade.account_id)?.account_name.toUpperCase() || "UNKNOWN"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex justify-end pr-2">
+                          {trade.result === "Win"
+                            ? <ArrowUpRight className="w-5 h-5 text-emerald-500/50" />
+                            : <ArrowDownRight className="w-5 h-5 text-red-500/50" />
+                          }
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   )
 }

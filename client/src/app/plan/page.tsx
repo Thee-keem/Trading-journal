@@ -2,8 +2,9 @@
 
 import React, { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ShieldAlert, CalendarClock, Globe2, BrainCircuit, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Save } from "lucide-react"
+import { ShieldAlert, CalendarClock, Globe2, BrainCircuit, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Save, Plus } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Modal } from "@/components/ui/modal"
 
 export default function TradingPlanModule() {
     const [activeTab, setActiveTab] = useState("risk")
@@ -131,6 +132,8 @@ function InputField({ label, placeholder, suffix, type = "text", defaultValue }:
 }
 
 function RiskRulesSection() {
+    const [isAddConditionModalOpen, setIsAddConditionModalOpen] = useState(false)
+
     return (
         <Card className="min-h-[500px]">
             <CardHeader>
@@ -164,9 +167,40 @@ function RiskRulesSection() {
                                 <span className="text-slate-300 text-sm">{rule}</span>
                             </div>
                         ))}
-                        <button onClick={() => alert("Add condition modal coming soon")} className="text-sm text-blue-400 font-medium hover:text-blue-300 py-2">+ Add hard stop condition</button>
+                        <button onClick={() => setIsAddConditionModalOpen(true)} className="text-sm text-blue-400 font-medium hover:text-blue-300 py-2">+ Add hard stop condition</button>
                     </div>
                 </div>
+
+                <Modal
+                    isOpen={isAddConditionModalOpen}
+                    onClose={() => setIsAddConditionModalOpen(false)}
+                    title="Add Hard Stop Condition"
+                >
+                    <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); setIsAddConditionModalOpen(false); alert("Condition added to plan! (Mock)"); }}>
+                        <div className="space-y-3">
+                            <label className="text-xs font-semibold text-slate-400 tracking-wider">NEW RULE / CONDITION</label>
+                            <textarea
+                                rows={3}
+                                placeholder="e.g. Stop trading after 3 consecutive losses, Max daily drawdown hit..."
+                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 resize-none font-sans shadow-inner"
+                                required
+                            ></textarea>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-semibold text-slate-400 tracking-wider">SEVERITY</label>
+                            <select className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-blue-500/50 appearance-none bg-no-repeat bg-[right_1rem_center] cursor-pointer">
+                                <option className="bg-slate-900">Hard Stop (Terminate Session)</option>
+                                <option className="bg-slate-900">Warning (Reduce Risk)</option>
+                                <option className="bg-slate-900">Advisory (Review Notes)</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:shadow-[0_0_30px_rgba(59,130,246,0.5)]">
+                            Add to Trading Plan
+                        </button>
+                    </form>
+                </Modal>
             </CardContent>
         </Card>
     )
@@ -191,7 +225,7 @@ function DailyRulesSection() {
 
                 <div>
                     <label className="text-sm font-semibold text-slate-300 block mb-3">News Filter</label>
-                    <select className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none appearance-none">
+                    <select className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none appearance-none bg-no-repeat bg-[right_1rem_center] cursor-pointer">
                         <option>Stop trading 30m before/after High Impact News</option>
                         <option>Must close open trades before High Impact News</option>
                         <option>No news restrictions</option>
@@ -210,7 +244,7 @@ function DailyRulesSection() {
                             "Risk is completely accepted",
                             "I feel physically and mentally well"
                         ].map((item, i) => (
-                            <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-transparent hover:bg-white/5 transition-colors group">
+                            <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-transparent hover:bg-white/5 transition-colors group cursor-pointer">
                                 <div className="w-5 h-5 rounded border border-slate-600 bg-black/50 group-hover:border-blue-500 transition-colors"></div>
                                 <span className="text-slate-300 text-sm">{item}</span>
                             </div>
@@ -306,7 +340,6 @@ function PsychologyRulesSection() {
                         </label>
                     </div>
                 </div>
-
             </CardContent>
         </Card>
     )

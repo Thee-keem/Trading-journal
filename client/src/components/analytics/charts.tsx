@@ -21,8 +21,8 @@ const tooltipStyle = {
 const axisProps = { stroke: "#1e293b", tick: { fill: "#475569", fontSize: 11 }, axisLine: false, tickLine: false }
 
 // Equity Curve
-export function EquityCurveChart({ data }: { data: { date: string; equity: number; pnl: number }[] }) {
-    const sampled = data.filter((_, i) => i % 2 === 0)
+export function EquityCurveChart({ data }: { data: { date: string; equity: number; pnl: number | null }[] }) {
+    const sampled = data.filter((_, i) => i % Math.max(1, Math.floor(data.length / 50)) === 0)
     return (
         <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={sampled} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -44,8 +44,8 @@ export function EquityCurveChart({ data }: { data: { date: string; equity: numbe
 
 // Drawdown Curve
 export function DrawdownChart({ data }: { data: { date: string; dd: number }[] }) {
-    const sampled = data.filter((_, i) => i % 2 === 0)
-    const minDD = Math.min(...data.map(d => d.dd))
+    const sampled = data.filter((_, i) => i % Math.max(1, Math.floor(data.length / 50)) === 0)
+    const minDD = data.length > 0 ? Math.min(...data.map(d => d.dd)) : 0
     return (
         <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={sampled} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -84,8 +84,8 @@ export function PnlHistogram({ data }: { data: { range: string; count: number; i
 }
 
 // Monte Carlo bands
-export function MonteCarloCurve({ data }: { data: { step: number; p5: number; p25: number; median: number; p75: number; p95: number }[] }) {
-    const sampled = data.filter((_, i) => i % 2 === 0)
+export function MonteCarloCurve({ data }: { data: { index: number; p5: number; p50: number; p95: number }[] }) {
+    const sampled = data.filter((_, i) => i % Math.max(1, Math.floor(data.length / 20)) === 0)
     return (
         <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={sampled} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -99,14 +99,12 @@ export function MonteCarloCurve({ data }: { data: { step: number; p5: number; p2
                         <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
                     </linearGradient>
                 </defs>
-                <XAxis dataKey="step" {...axisProps} tickFormatter={v => `T${v}`} />
+                <XAxis dataKey="index" {...axisProps} tickFormatter={v => `T${v}`} />
                 <YAxis {...axisProps} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} domain={["auto", "auto"]} />
                 <Tooltip {...tooltipStyle} formatter={(v: any) => [`$${Number(v).toLocaleString()}`, ""]} />
                 <ReferenceLine y={50000} stroke="#334155" strokeDasharray="4 4" label={{ value: "Start", fill: "#475569", fontSize: 10 }} />
                 <Area type="monotone" dataKey="p95" stroke="#6366f1" strokeWidth={0} fill="url(#mcOuter)" animationDuration={1500} dot={false} name="95th pct" />
-                <Area type="monotone" dataKey="p75" stroke="#6366f1" strokeWidth={0.5} fill="url(#mcInner)" animationDuration={1500} dot={false} name="75th pct" />
-                <Line type="monotone" dataKey="median" stroke="#3b82f6" strokeWidth={2.5} dot={false} animationDuration={1500} name="Median" />
-                <Area type="monotone" dataKey="p25" stroke="#ef4444" strokeWidth={0.5} fill="none" animationDuration={1500} dot={false} name="25th pct" />
+                <Line type="monotone" dataKey="p50" stroke="#3b82f6" strokeWidth={2.5} dot={false} animationDuration={1500} name="Median" />
                 <Line type="monotone" dataKey="p5" stroke="#ef4444" strokeWidth={1} strokeDasharray="4 4" dot={false} animationDuration={1500} name="Worst 5%" />
             </AreaChart>
         </ResponsiveContainer>
